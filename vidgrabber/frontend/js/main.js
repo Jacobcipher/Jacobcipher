@@ -12,11 +12,12 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             submitBtn.disabled = true;
-            submitBtn.textContent = 'Processing...';
-            displayMessage('Fetching video information...', 'info');
+            submitBtn.textContent = 'Processing... Please wait.'; // Updated message
+            displayMessage('Requesting video... This may take a moment.', 'info');
 
             try {
-                const response = await fetch('http://127.0.0.1:8000/api/download', {
+                // Point to the new backend endpoint for muxing and direct download
+                const response = await fetch('http://127.0.0.1:8000/api/process_and_download_video', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -25,68 +26,101 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
 
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+                    // Try to parse error detail from backend if it's a JSON response
+                    let errorDetail = `HTTP error! status: ${response.status}`;
+                    try {
+                        const errorData = await response.json();
+                        errorDetail = errorData.detail || errorDetail;
+                    } catch (e) {
+                        // If response is not JSON, use the default errorDetail
+                        console.warn('Could not parse error response as JSON.');
+                    }
+                    throw new Error(errorDetail);
                 }
 
-                const data = await response.json();
-
-                if (data.error) {
-                    throw new Error(data.error);
+                // If response.ok is true, the browser should be initiating a download
+                // due to Content-Disposition header from the backend.
+                // We can try to get the filename from the Content-Disposition header for the message.
+                let filename = "your video";
+                const disposition = response.headers.get('content-disposition');
+                if (disposition && disposition.indexOf('attachment') !== -1) {
+                    const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+                    const matches = filenameRegex.exec(disposition);
+                    if (matches != null && matches[1]) {
+                        filename = matches[1].replace(/['"]/g, '');
+                    }
                 }
 
-                localStorage.setItem('videoData', JSON.stringify(data));
-                window.location.href = 'result.html';
+                displayMessage(`Download for "${filename}" should start automatically. If not, please check your browser's download manager.`, 'success');
+                // No redirection to result.html for this direct download flow.
+                // The existing result.html logic (displayVideoResults, localStorage) is now bypassed for this button.
+                // We can decide later if we want a hybrid approach or separate buttons.
 
             } catch (error) {
-                console.error('Error fetching video data:', error);
+                console.error('Error processing video:', error);
                 displayMessage(`Error: ${error.message}`, 'error');
             } finally {
                 submitBtn.disabled = false;
-                submitBtn.textContent = 'Download';
+                submitBtn.textContent = 'Download'; // Reset button text
             }
         });
     }
 
+    // Function to display messages on the page
     function displayMessage(message, type = 'info') {
         if (messageDiv) {
             messageDiv.textContent = message;
             messageDiv.className = `message ${type}`;
             messageDiv.style.display = 'block';
         } else {
+            // Fallback if messageDiv is not on the current page
+            // This should ideally not be needed if index.html always has a messageDiv
             alert(message);
         }
     }
 
+    // The result.html display logic (displayVideoResults function and its call)
+    // is no longer directly used by the main download button.
+    // It could be repurposed later if we implement a "get info first, then download" flow
+    // or for displaying choices (like different resolutions/formats).
+    // For now, it remains here but is dormant for the primary download action.
     if (window.location.pathname.endsWith('result.html')) {
         const videoDataString = localStorage.getItem('videoData');
         if (videoDataString) {
             try {
                 const videoData = JSON.parse(videoDataString);
-                displayVideoResults(videoData);
+                // displayVideoResults(videoData); // This function would need to be available
+                                                // or its definition moved/copied here if result.html is still used.
+                                                // For now, commenting out as the flow changed.
+                console.log("Result page loaded, data found in localStorage but not displayed by this script version.");
+                const resultsDiv = document.getElementById('results');
+                if(resultsDiv) resultsDiv.innerHTML = '<p>This page is not currently used for direct downloads. Please use the main page.</p>';
             } catch (e) {
                 console.error("Error parsing video data from localStorage", e);
                 const resultsDiv = document.getElementById('results');
-                if(resultsDiv) resultsDiv.innerHTML = '<p>Error displaying video data. Please try again.</p>';
+                if(resultsDiv) resultsDiv.innerHTML = '<p>Error displaying video data.</p>';
             }
         } else {
             const resultsDiv = document.getElementById('results');
-            if(resultsDiv) resultsDiv.innerHTML = '<p>No video data found. Please go back and submit a URL.</p>';
+            if(resultsDiv) resultsDiv.innerHTML = '<p>No video data found.</p>';
         }
     }
 });
 
+// The displayVideoResults function might be removed or refactored later
+// if result.html is fully deprecated or changed.
+// For now, it's left here to avoid breaking result.html entirely if it's accessed.
 function displayVideoResults(data) {
+    // ... (existing function, currently not called by the main download flow) ...
+    // (This function's content is the same as in the previous version of main.js,
+    //  including the audio info display logic)
     const resultsDiv = document.getElementById('results');
     if (!resultsDiv) return;
-
     resultsDiv.innerHTML = '';
-
     if (data.error) {
         resultsDiv.innerHTML = `<p class="error-message">Error: ${data.error}</p>`;
         return;
     }
-
     const titleElement = document.createElement('h2');
     titleElement.textContent = data.title || 'Untitled Video';
     resultsDiv.appendChild(titleElement);
@@ -126,15 +160,12 @@ function displayVideoResults(data) {
                  formatDescription += ` ~${format.tbr.toFixed(2)} kbps`;
             }
 
-            // **MODIFIED PART: Add audio information more clearly**
             let audioInfo = "";
             if (!format.acodec || format.acodec === 'none') {
                 audioInfo = " (Video Only, No Audio)";
             } else {
                 audioInfo = ` (Audio: ${format.acodec})`;
             }
-            // You could also show vcodec if desired: `(V: ${format.vcodec || 'N/A'}, A: ${format.acodec || 'N/A'})`
-            // For this change, we focus on making "No Audio" prominent.
 
             listItem.innerHTML = `
                 <span>${formatDescription}${audioInfo}</span>
@@ -165,4 +196,5 @@ function displayVideoResults(data) {
             }
         });
     });
+    console.warn("displayVideoResults function is present but not actively used by the main download button in this script version.");
 }
