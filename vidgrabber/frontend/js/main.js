@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
             displayMessage('Fetching video information...', 'info');
 
             try {
-                const response = await fetch('/api/download', {
+                const response = await fetch('http://127.0.0.1:8000/api/download', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -35,7 +35,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     throw new Error(data.error);
                 }
 
-                // Store data and redirect
                 localStorage.setItem('videoData', JSON.stringify(data));
                 window.location.href = 'result.html';
 
@@ -49,19 +48,16 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Function to display messages on the page
     function displayMessage(message, type = 'info') {
         if (messageDiv) {
             messageDiv.textContent = message;
-            messageDiv.className = `message ${type}`; // Use classes for styling
+            messageDiv.className = `message ${type}`;
             messageDiv.style.display = 'block';
         } else {
-            // Fallback if messageDiv is not on the current page (e.g. result.html)
             alert(message);
         }
     }
 
-    // Logic for result.html (if this script is also linked there or a separate one is used)
     if (window.location.pathname.endsWith('result.html')) {
         const videoDataString = localStorage.getItem('videoData');
         if (videoDataString) {
@@ -73,8 +69,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 const resultsDiv = document.getElementById('results');
                 if(resultsDiv) resultsDiv.innerHTML = '<p>Error displaying video data. Please try again.</p>';
             }
-            // Optional: Clear data from localStorage after use if not needed anymore
-            // localStorage.removeItem('videoData');
         } else {
             const resultsDiv = document.getElementById('results');
             if(resultsDiv) resultsDiv.innerHTML = '<p>No video data found. Please go back and submit a URL.</p>';
@@ -86,10 +80,10 @@ function displayVideoResults(data) {
     const resultsDiv = document.getElementById('results');
     if (!resultsDiv) return;
 
-    resultsDiv.innerHTML = ''; // Clear previous results
+    resultsDiv.innerHTML = '';
 
     if (data.error) {
-        resultsDiv.innerHTML = `<p class="error">Error: ${data.error}</p>`;
+        resultsDiv.innerHTML = `<p class="error-message">Error: ${data.error}</p>`;
         return;
     }
 
@@ -101,7 +95,7 @@ function displayVideoResults(data) {
         const thumbnailElement = document.createElement('img');
         thumbnailElement.src = data.thumbnail;
         thumbnailElement.alt = 'Video Thumbnail';
-        thumbnailElement.style.maxWidth = '300px'; // Basic styling
+        thumbnailElement.style.maxWidth = '300px';
         thumbnailElement.style.marginBottom = '15px';
         resultsDiv.appendChild(thumbnailElement);
     }
@@ -117,7 +111,6 @@ function displayVideoResults(data) {
         resultsDiv.appendChild(durationElem);
     }
 
-
     const formatsList = document.createElement('ul');
     formatsList.className = 'formats-list';
 
@@ -125,13 +118,26 @@ function displayVideoResults(data) {
         data.formats.forEach(format => {
             const listItem = document.createElement('li');
 
-            let formatDescription = `${format.format_note || format.resolution || format.format_id} (${format.ext})`;
+            let formatDescription = `${format.format_note || format.resolution || (format.width && format.height ? `${format.width}x${format.height}` : '') || format.format_id} (${format.ext})`;
+
             if (format.filesize_approx) {
                 formatDescription += ` - ${(format.filesize_approx / 1024 / 1024).toFixed(2)} MB`;
+            } else if (format.tbr) {
+                 formatDescription += ` ~${format.tbr.toFixed(2)} kbps`;
             }
 
+            // **MODIFIED PART: Add audio information more clearly**
+            let audioInfo = "";
+            if (!format.acodec || format.acodec === 'none') {
+                audioInfo = " (Video Only, No Audio)";
+            } else {
+                audioInfo = ` (Audio: ${format.acodec})`;
+            }
+            // You could also show vcodec if desired: `(V: ${format.vcodec || 'N/A'}, A: ${format.acodec || 'N/A'})`
+            // For this change, we focus on making "No Audio" prominent.
+
             listItem.innerHTML = `
-                <span>${formatDescription}</span>
+                <span>${formatDescription}${audioInfo}</span>
                 <div class="format-buttons">
                     <a href="${format.url}" target="_blank" download class="download-btn">Download</a>
                     <button class="copy-btn" data-url="${format.url}">Copy Link</button>
@@ -141,12 +147,11 @@ function displayVideoResults(data) {
         });
     } else {
         const noFormatsItem = document.createElement('li');
-        noFormatsItem.textContent = 'No downloadable formats found for this video, or there was an issue fetching them.';
+        noFormatsItem.textContent = 'No suitable downloadable formats found for this video, or there was an issue fetching them.';
         formatsList.appendChild(noFormatsItem);
     }
     resultsDiv.appendChild(formatsList);
 
-    // Add event listeners for copy buttons
     document.querySelectorAll('.copy-btn').forEach(button => {
         button.addEventListener('click', async (e) => {
             const urlToCopy = e.target.dataset.url;
